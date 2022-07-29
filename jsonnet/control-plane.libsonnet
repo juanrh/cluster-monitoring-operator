@@ -5,6 +5,28 @@ function(params)
 
   controlPlane(cfg) + {
 
+    prometheusRule+: {
+      spec+: {
+        local groups = super.groups,
+        local k8sRulesGroups = std.filter(function(group) group.name == 'k8s.rules', groups),
+        local k8sRules = if std.length(k8sRulesGroups)>0 then k8sRulesGroups[0].rules else [],
+        local cpuUsageSumRateRuleRecord = 'node_namespace_pod_container:container_cpu_usage_seconds_total:sum_rate',
+        local cpuUsageSumRateRules = std.filter(function(rule) rule.record == cpuUsageSumRateRuleRecord, k8sRules),
+        local otherGroups = std.filter(function(group) group.name != 'k8s.rules', groups),
+        groups: [
+          {
+             name: 'k8s.rules',
+             rules: (if std.length(cpuUsageSumRateRules) > 0 then [
+                {
+                  record: std.strReplace(cpuUsageSumRateRuleRecord, 'rate', 'irate'),
+                  expr: std.strReplace(cpuUsageSumRateRules[0].expr, 'rate', 'irate'),
+                }
+             ] else []) + k8sRules,
+          }
+        ] + otherGroups,
+      }
+    },
+
     etcdMixin:: (import 'github.com/etcd-io/etcd/contrib/mixin/mixin.libsonnet') + {
       _config+:: cfg.mixin._config,
     },
